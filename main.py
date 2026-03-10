@@ -5,8 +5,8 @@ from deepface import DeepFace
 import yt_dlp
 
 
-USE_LOCAL_VIDEO = False 
-LOCAL_VIDEO_PATH = "my_video.mp4" 
+USE_LOCAL_VIDEO = False
+LOCAL_VIDEO_PATH = "video2.mp4" 
 
 VIDEO_URL = "https://youtu.be/QE3QwTA5ujE?si=JiiX0X6aQpYZtOEt" 
 REFERENCE_IMG = "reference.jpg" 
@@ -30,8 +30,6 @@ def download_video(url):
         'outtmpl': TEMP_VIDEO,
         'quiet': False,
         'no_warnings': True,
-        'download_ranges': lambda info_dict, ydl: [{'start_time': 300, 'end_time': 360}], 
-        'force_keyframes_at_cuts': True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
