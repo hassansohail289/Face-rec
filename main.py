@@ -18,6 +18,14 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_detection_confidence=0.5
 )
 
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    static_image_mode=False,
+    max_num_hands=2,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
+
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
@@ -33,11 +41,20 @@ REFERENCE_IMG = "video.jpg"
 FRAME_SKIP = 30 
 
 def is_pixel_perfect(frame):
-    results = face_mesh.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    if not results.multi_face_landmarks:
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    
+    hand_results = hands.process(rgb_frame)
+    if hand_results.multi_hand_landmarks:
+        for hand_landmarks in hand_results.multi_hand_landmarks:
+            for landmark in hand_landmarks.landmark:
+                if landmark.visibility < 0.8:
+                    return False
+        
+    face_results = face_mesh.process(rgb_frame)
+    if not face_results.multi_face_landmarks:
         return False
     
-    for landmarks in results.multi_face_landmarks:
+    for landmarks in face_results.multi_face_landmarks:
         mouth_gap = abs(landmarks.landmark[13].y - landmarks.landmark[14].y)
         eye_gap = abs(landmarks.landmark[159].y - landmarks.landmark[145].y)
         
