@@ -5,10 +5,19 @@ import shutil
 import mediapipe as mp
 from deepface import DeepFace
 import tensorflow as tf
+import yt_dlp
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
 os.environ['TORCH_CUDA_ARCH_LIST'] ='8.9' 
+
+USE_LOCAL_VIDEO = False # True: direct file, False: Download from YT
+YOUTUBE_URL = "https://youtu.be/AUs0JFY57Wc?si=Ri7RWSzLRY8XqvY6"
+LOCAL_VIDEO_PATH = "video.mp4" 
+REFERENCE_IMG = "reference.jpg" 
+OUTPUT_DIR = "ai_perfect_shots"
+FRAME_SKIP = 30 
+
 
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
@@ -35,11 +44,6 @@ if gpus:
     except Exception as e:
         print(f"[GPU ERROR] {e}")
 
-OUTPUT_DIR = "ai_perfect_shots"
-LOCAL_VIDEO_PATH = "video.mp4" 
-REFERENCE_IMG = "video.jpg" 
-FRAME_SKIP = 30 
-
 def is_pixel_perfect(frame):
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     
@@ -48,6 +52,8 @@ def is_pixel_perfect(frame):
         for hand_landmarks in hand_results.multi_hand_landmarks:
             for landmark in hand_landmarks.landmark:
                 if landmark.visibility < 0.8:
+                    return False
+                if landmark.y < 0.7:
                     return False
         
     face_results = face_mesh.process(rgb_frame)
@@ -62,11 +68,29 @@ def is_pixel_perfect(frame):
             return True
     return False
 
+def download_youtube_video(url):
+    print(f"[YT-DLP] Downloading video for stable processing...")
+    output_filename = "yt_download.mp4"
+    if os.path.exists(output_filename):
+        os.remove(output_filename)
+        
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': output_filename,
+        'quiet': False,
+        'no_warnings': True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+    return output_filename
+
 def run_project():
     if os.path.exists(OUTPUT_DIR): shutil.rmtree(OUTPUT_DIR)
     os.makedirs(OUTPUT_DIR)
     
-    cap = cv2.VideoCapture(LOCAL_VIDEO_PATH)
+    video_source = LOCAL_VIDEO_PATH if USE_LOCAL_VIDEO else download_youtube_video(YOUTUBE_URL)
+    
+    cap = cv2.VideoCapture(video_source)
     saved = 0
     frame_idx = 0
 
