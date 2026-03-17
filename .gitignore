@@ -2,3 +2,5 @@ venv/
 ai_perfect_shots/
 ai_perfect_shots1/
 ai_perfect_shots2/
+build/
+dist/

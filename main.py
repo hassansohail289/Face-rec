@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 import cv2
 import shutil
@@ -6,18 +7,20 @@ import mediapipe as mp
 from deepface import DeepFace
 import tensorflow as tf
 import yt_dlp
+import glob
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
 os.environ['TORCH_CUDA_ARCH_LIST'] ='8.9' 
 
-USE_LOCAL_VIDEO = True
-YOUTUBE_URL = "https://youtu.be/qp7KGRYjFvY?si=Ld6htfwpUmiLwW_t"
-LOCAL_VIDEO_PATH = "video.mp4" 
-REFERENCE_IMG = "video.jpg" 
-OUTPUT_DIR = "ai_perfect_shots"
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+OUTPUT_DIR = os.path.join(BASE_DIR, "ai_perfect_shots")
 FRAME_SKIP = 30 
-  
+
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     static_image_mode=False, 
@@ -49,6 +52,25 @@ if gpus:
         print(f"[SUCCESS] RTX 5080 Activated!")
     except Exception as e:
         print(f"[GPU ERROR] {e}")
+
+def select_file(file_list, file_type):
+    if not file_list:
+        return None
+    if len(file_list) == 1:
+        print(f"[AUTO-SELECT] {file_type}: {os.path.basename(file_list[0])}")
+        return file_list[0]
+    
+    print(f"\nSelect {file_type}:")
+    for i, file in enumerate(file_list):
+        print(f"{i+1}. {os.path.basename(file)}")
+    
+    while True:
+        try:
+            choice = int(input(f"Enter number (1-{len(file_list)}): "))
+            if 1 <= choice <= len(file_list):
+                return file_list[choice-1]
+        except ValueError:
+            pass
 
 def is_pixel_perfect(frame):
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -83,8 +105,8 @@ def is_pixel_perfect(frame):
     return False
 
 def download_youtube_video(url):
-    print(f"[YT-DLP] Downloading video for stable processing...")
-    output_filename = "yt_download.mp4"
+    print(f"[YT-DLP] Downloading video...")
+    output_filename = os.path.join(BASE_DIR, "yt_download.mp4")
     if os.path.exists(output_filename):
         os.remove(output_filename)
         
@@ -99,10 +121,38 @@ def download_youtube_video(url):
     return output_filename
 
 def run_project():
+    print("\n--- AI SYSTEM STARTUP ---")
+    print("1. Local Video")
+    print("2. YouTube Video")
+    mode = input("Select Mode (1 or 2): ")
+
+    video_source = ""
+    if mode == '2':
+        url = input("Enter YouTube URL: ")
+        video_source = download_youtube_video(url)
+    else:
+        v_exts = ['*.mp4', '*.mkv', '*.avi', '*.mov']
+        v_files = []
+        for ext in v_exts:
+            v_files.extend(glob.glob(os.path.join(BASE_DIR, ext)))
+        video_source = select_file(v_files, "Video")
+
+    if not video_source:
+        print("No video found.")
+        return
+
+    i_exts = ['*.jpg', '*.jpeg', '*.png', '*.webp']
+    i_files = []
+    for ext in i_exts:
+        i_files.extend(glob.glob(os.path.join(BASE_DIR, ext)))
+    reference_img = select_file(i_files, "Reference Image")
+
+    if not reference_img:
+        print("No image found.")
+        return
+
     if os.path.exists(OUTPUT_DIR): shutil.rmtree(OUTPUT_DIR)
     os.makedirs(OUTPUT_DIR)
-    
-    video_source = LOCAL_VIDEO_PATH if USE_LOCAL_VIDEO else download_youtube_video(YOUTUBE_URL)
     
     cap = cv2.VideoCapture(video_source)
     saved = 0
@@ -119,7 +169,7 @@ def run_project():
                 if is_pixel_perfect(frame):
                     verify = DeepFace.verify(
                         img1_path = frame, 
-                        img2_path = REFERENCE_IMG, 
+                        img2_path = reference_img, 
                         model_name = "Facenet", 
                         detector_backend = "retinaface",
                         enforce_detection = False,
@@ -128,14 +178,16 @@ def run_project():
 
                     if verify['distance'] < 0.25:
                         saved += 1
-                        print(f"[MATCH] Perfect Shot {saved} at frame {frame_idx}")
-                        cv2.imwrite(f"{OUTPUT_DIR}/perfect_shot_{saved}.jpg", frame)
+                        print(f"[MATCH] Perfect Shot {saved} at frame {frame_idx} (Dist: {verify['distance']:.2f})")
+                        cv2.imwrite(os.path.join(OUTPUT_DIR, f"perfect_shot_{saved}.jpg"), frame)
             except:
                 pass
         frame_idx += 1
     
     cap.release()
     print(f"\n[DONE] Total {saved} Professional Shots saved.")
+    os.startfile(OUTPUT_DIR)
+    input("Press Enter to exit...")
 
 if __name__ == "__main__":
     run_project()
