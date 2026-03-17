@@ -11,14 +11,13 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
 os.environ['TORCH_CUDA_ARCH_LIST'] ='8.9' 
 
-USE_LOCAL_VIDEO = False # True: direct file, False: Download from YT
-YOUTUBE_URL = "https://youtu.be/AUs0JFY57Wc?si=Ri7RWSzLRY8XqvY6"
+USE_LOCAL_VIDEO = True
+YOUTUBE_URL = "https://youtu.be/qp7KGRYjFvY?si=Ld6htfwpUmiLwW_t"
 LOCAL_VIDEO_PATH = "video.mp4" 
-REFERENCE_IMG = "reference.jpg" 
+REFERENCE_IMG = "video.jpg" 
 OUTPUT_DIR = "ai_perfect_shots"
 FRAME_SKIP = 30 
-
-
+  
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     static_image_mode=False, 
@@ -31,6 +30,13 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=2,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
+
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose(
+    static_image_mode=False,
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
@@ -56,6 +62,14 @@ def is_pixel_perfect(frame):
                 if landmark.y < 0.7:
                     return False
         
+    pose_results = pose.process(rgb_frame)
+    if pose_results.pose_landmarks:
+        left_shoulder = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        right_shoulder = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+        shoulder_diff = abs(left_shoulder.y - right_shoulder.y)
+        if shoulder_diff > 0.05:
+            return False
+
     face_results = face_mesh.process(rgb_frame)
     if not face_results.multi_face_landmarks:
         return False
