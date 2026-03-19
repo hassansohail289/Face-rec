@@ -56,9 +56,12 @@ if gpus:
 def select_file(file_list, file_type):
     if not file_list:
         return None
+    
+    file_list.sort(key=lambda x: os.path.basename(x).lower())
+    
     if len(file_list) == 1:
         print(f"[AUTO-SELECT] {file_type}: {os.path.basename(file_list[0])}")
-        return file_list[0]
+        return os.path.normpath(os.path.abspath(file_list[0]))
     
     print(f"\nSelect {file_type}:")
     for i, file in enumerate(file_list):
@@ -66,9 +69,10 @@ def select_file(file_list, file_type):
     
     while True:
         try:
-            choice = int(input(f"Enter number (1-{len(file_list)}): "))
-            if 1 <= choice <= len(file_list):
-                return file_list[choice-1]
+            choice = input(f"Enter number (1-{len(file_list)}): ")
+            idx = int(choice) - 1
+            if 0 <= idx < len(file_list):
+                return os.path.normpath(os.path.abspath(file_list[idx]))
         except ValueError:
             pass
 
@@ -118,7 +122,7 @@ def download_youtube_video(url):
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
-    return output_filename
+    return os.path.normpath(os.path.abspath(output_filename))
 
 def run_project():
     print("\n--- AI SYSTEM STARTUP ---")
@@ -137,7 +141,7 @@ def run_project():
             v_files.extend(glob.glob(os.path.join(BASE_DIR, ext)))
         video_source = select_file(v_files, "Video")
 
-    if not video_source:
+    if not video_source or not os.path.exists(video_source):
         print("No video found.")
         return
 
@@ -147,14 +151,18 @@ def run_project():
         i_files.extend(glob.glob(os.path.join(BASE_DIR, ext)))
     reference_img = select_file(i_files, "Reference Image")
 
-    if not reference_img:
+    if not reference_img or not os.path.exists(reference_img):
         print("No image found.")
         return
 
     if os.path.exists(OUTPUT_DIR): shutil.rmtree(OUTPUT_DIR)
     os.makedirs(OUTPUT_DIR)
     
-    cap = cv2.VideoCapture(video_source)
+    cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        print(f"[ERROR] Could not open video source.")
+        return
+
     saved = 0
     frame_idx = 0
 
@@ -182,6 +190,7 @@ def run_project():
                         cv2.imwrite(os.path.join(OUTPUT_DIR, f"perfect_shot_{saved}.jpg"), frame)
             except:
                 pass
+        
         frame_idx += 1
     
     cap.release()
