@@ -19,6 +19,7 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 OUTPUT_DIR = os.path.join(BASE_DIR, "ai_perfect_shots")
+SCANNED_DIR = os.path.join(BASE_DIR, "all_scanned_frames")
 FRAME_SKIP = 30 
 
 mp_face_mesh = mp.solutions.face_mesh
@@ -56,17 +57,13 @@ if gpus:
 def select_file(file_list, file_type):
     if not file_list:
         return None
-    
     file_list.sort(key=lambda x: os.path.basename(x).lower())
-    
     if len(file_list) == 1:
         print(f"[AUTO-SELECT] {file_type}: {os.path.basename(file_list[0])}")
         return os.path.normpath(os.path.abspath(file_list[0]))
-    
     print(f"\nSelect {file_type}:")
     for i, file in enumerate(file_list):
         print(f"{i+1}. {os.path.basename(file)}")
-    
     while True:
         try:
             choice = input(f"Enter number (1-{len(file_list)}): ")
@@ -78,7 +75,6 @@ def select_file(file_list, file_type):
 
 def is_pixel_perfect(frame):
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
     hand_results = hands.process(rgb_frame)
     if hand_results.multi_hand_landmarks:
         for hand_landmarks in hand_results.multi_hand_landmarks:
@@ -87,7 +83,6 @@ def is_pixel_perfect(frame):
                     return False
                 if landmark.y < 0.7:
                     return False
-        
     pose_results = pose.process(rgb_frame)
     if pose_results.pose_landmarks:
         left_shoulder = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
@@ -95,15 +90,12 @@ def is_pixel_perfect(frame):
         shoulder_diff = abs(left_shoulder.y - right_shoulder.y)
         if shoulder_diff > 0.05:
             return False
-
     face_results = face_mesh.process(rgb_frame)
     if not face_results.multi_face_landmarks:
         return False
-    
     for landmarks in face_results.multi_face_landmarks:
         mouth_gap = abs(landmarks.landmark[13].y - landmarks.landmark[14].y)
         eye_gap = abs(landmarks.landmark[159].y - landmarks.landmark[145].y)
-        
         if mouth_gap < 0.012 and eye_gap > 0.012:
             return True
     return False
@@ -113,7 +105,6 @@ def download_youtube_video(url):
     output_filename = os.path.join(BASE_DIR, "yt_download.mp4")
     if os.path.exists(output_filename):
         os.remove(output_filename)
-        
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': output_filename,
@@ -125,7 +116,7 @@ def download_youtube_video(url):
     return os.path.normpath(os.path.abspath(output_filename))
 
 def run_project():
-    print("\n--- AI SYSTEM STARTUP ---")
+    print("\n--- AI SYSTEM STARTUP (AUDIT MODE) ---")
     print("1. Local Video")
     print("2. YouTube Video")
     mode = input("Select Mode (1 or 2): ")
@@ -155,8 +146,9 @@ def run_project():
         print("No image found.")
         return
 
-    if os.path.exists(OUTPUT_DIR): shutil.rmtree(OUTPUT_DIR)
-    os.makedirs(OUTPUT_DIR)
+    for folder in [OUTPUT_DIR, SCANNED_DIR]:
+        if os.path.exists(folder): shutil.rmtree(folder)
+        os.makedirs(folder)
     
     cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
     if not cap.isOpened():
@@ -164,15 +156,19 @@ def run_project():
         return
 
     saved = 0
+    scanned_count = 0
     frame_idx = 0
 
-    print(f"\n[GPU MINING] Scanning for Studio-Quality Shots...")
+    print(f"\n[GPU MINING] Scanning and Auditing Frames...")
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret: break
 
         if frame_idx % FRAME_SKIP == 0:
+            scanned_count += 1
+            cv2.imwrite(os.path.join(SCANNED_DIR, f"scanned_frame_{scanned_count}.jpg"), frame)
+            
             try:
                 if is_pixel_perfect(frame):
                     verify = DeepFace.verify(
@@ -186,16 +182,18 @@ def run_project():
 
                     if verify['distance'] < 0.25:
                         saved += 1
-                        print(f"[MATCH] Perfect Shot {saved} at frame {frame_idx} (Dist: {verify['distance']:.2f})")
+                        print(f"[MATCH] Perfect Shot {saved} at frame {frame_idx}")
                         cv2.imwrite(os.path.join(OUTPUT_DIR, f"perfect_shot_{saved}.jpg"), frame)
             except:
                 pass
         
         frame_idx += 1
+
     
     cap.release()
-    print(f"\n[DONE] Total {saved} Professional Shots saved.")
-    os.startfile(OUTPUT_DIR)
+    print(f"\n[DONE] Total Scanned: {scanned_count} | Total Perfect: {saved}")
+    
+    os.startfile(BASE_DIR)
     input("Press Enter to exit...")
 
 if __name__ == "__main__":
