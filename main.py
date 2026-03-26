@@ -8,6 +8,8 @@ from deepface import DeepFace
 import tensorflow as tf
 import yt_dlp
 import glob
+import tkinter as tk
+from tkinter import filedialog
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
@@ -54,24 +56,13 @@ if gpus:
     except Exception as e:
         print(f"[GPU ERROR] {e}")
 
-def select_file(file_list, file_type):
-    if not file_list:
-        return None
-    file_list.sort(key=lambda x: os.path.basename(x).lower())
-    if len(file_list) == 1:
-        print(f"[AUTO-SELECT] {file_type}: {os.path.basename(file_list[0])}")
-        return os.path.normpath(os.path.abspath(file_list[0]))
-    print(f"\nSelect {file_type}:")
-    for i, file in enumerate(file_list):
-        print(f"{i+1}. {os.path.basename(file)}")
-    while True:
-        try:
-            choice = input(f"Enter number (1-{len(file_list)}): ")
-            idx = int(choice) - 1
-            if 0 <= idx < len(file_list):
-                return os.path.normpath(os.path.abspath(file_list[idx]))
-        except ValueError:
-            pass
+def get_file_path(title, file_types):
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    file_path = filedialog.askopenfilename(title=title, filetypes=file_types)
+    root.destroy()
+    return file_path
 
 def is_pixel_perfect(frame):
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -116,35 +107,27 @@ def download_youtube_video(url):
     return os.path.normpath(os.path.abspath(output_filename))
 
 def run_project():
-    print("\n--- AI SYSTEM STARTUP (AUDIT MODE) ---")
-    print("1. Local Video")
-    print("2. YouTube Video")
+    print("\n--- AI SYSTEM STARTUP (GUI SELECTOR) ---")
+    print("1. Local Video (Browse)")
+    print("2. YouTube Video (URL)")
     mode = input("Select Mode (1 or 2): ")
 
     video_source = ""
     if mode == '2':
-        url = input("Enter YouTube URL: ")
+        url = input("\nEnter YouTube URL: ")
         video_source = download_youtube_video(url)
     else:
-        v_exts = ['*.mp4', '*.mkv', '*.avi', '*.mov']
-        v_files = []
-        for ext in v_exts:
-            v_files.extend(glob.glob(os.path.join(BASE_DIR, ext)))
-        video_source = select_file(v_files, "Video")
+        print("\nOpening File Explorer... Please select a Video.")
+        video_source = get_file_path("Select Video", [("Video files", "*.mp4 *.mkv *.avi *.mov")])
 
-    if not video_source or not os.path.exists(video_source):
-        print("No video found.")
-        return
+    if not video_source:
+        print("No video selected. Exiting."); return
 
-    i_exts = ['*.jpg', '*.jpeg', '*.png', '*.webp']
-    i_files = []
-    for ext in i_exts:
-        i_files.extend(glob.glob(os.path.join(BASE_DIR, ext)))
-    reference_img = select_file(i_files, "Reference Image")
+    print("Opening File Explorer... Please select a Reference Image.")
+    reference_img = get_file_path("Select Reference Image", [("Image files", "*.jpg *.jpeg *.png *.webp")])
 
-    if not reference_img or not os.path.exists(reference_img):
-        print("No image found.")
-        return
+    if not reference_img:
+        print("No image selected. Exiting."); return
 
     for folder in [OUTPUT_DIR, SCANNED_DIR]:
         if os.path.exists(folder): shutil.rmtree(folder)
@@ -152,23 +135,19 @@ def run_project():
     
     cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
     if not cap.isOpened():
-        print(f"[ERROR] Could not open video source.")
-        return
+        print(f"[ERROR] Could not open video source."); return
 
     saved = 0
     scanned_count = 0
     frame_idx = 0
-
     print(f"\n[GPU MINING] Scanning and Auditing Frames...")
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret: break
-
         if frame_idx % FRAME_SKIP == 0:
             scanned_count += 1
             cv2.imwrite(os.path.join(SCANNED_DIR, f"scanned_frame_{scanned_count}.jpg"), frame)
-            
             try:
                 if is_pixel_perfect(frame):
                     verify = DeepFace.verify(
@@ -179,20 +158,15 @@ def run_project():
                         enforce_detection = False,
                         silent = True
                     )
-
                     if verify['distance'] < 0.25:
                         saved += 1
                         print(f"[MATCH] Perfect Shot {saved} at frame {frame_idx}")
                         cv2.imwrite(os.path.join(OUTPUT_DIR, f"perfect_shot_{saved}.jpg"), frame)
-            except:
-                pass
-        
+            except: pass
         frame_idx += 1
-
     
     cap.release()
     print(f"\n[DONE] Total Scanned: {scanned_count} | Total Perfect: {saved}")
-    
     os.startfile(BASE_DIR)
     input("Press Enter to exit...")
 
