@@ -6,10 +6,7 @@ import shutil
 import mediapipe as mp
 from deepface import DeepFace
 import tensorflow as tf
-import yt_dlp
 import glob
-import tkinter as tk
-from tkinter import filedialog
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
@@ -22,30 +19,15 @@ else:
 
 OUTPUT_DIR = os.path.join(BASE_DIR, "ai_perfect_shots")
 SCANNED_DIR = os.path.join(BASE_DIR, "all_scanned_frames")
+
 FRAME_SKIP = 30 
 
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    static_image_mode=False, 
-    max_num_faces=1, 
-    refine_landmarks=True, 
-    min_detection_confidence=0.5
-)
-
+face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5)
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(
-    static_image_mode=False,
-    max_num_hands=2,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
-
+hands = mp_hands.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.5, min_tracking_confidence=0.5)
 mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(
-    static_image_mode=False,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
+pose = mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -56,107 +38,66 @@ if gpus:
     except Exception as e:
         print(f"[GPU ERROR] {e}")
 
-def get_file_path(title, file_types):
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    file_path = filedialog.askopenfilename(title=title, filetypes=file_types)
-    root.destroy()
-    return file_path
-
 def is_pixel_perfect(frame):
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     hand_results = hands.process(rgb_frame)
     if hand_results.multi_hand_landmarks:
         for hand_landmarks in hand_results.multi_hand_landmarks:
             for landmark in hand_landmarks.landmark:
-                if landmark.visibility < 0.8:
-                    return False
-                if landmark.y < 0.7:
-                    return False
+                if landmark.visibility < 0.8 or landmark.y < 0.7: return False
     pose_results = pose.process(rgb_frame)
     if pose_results.pose_landmarks:
-        left_shoulder = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
-        right_shoulder = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
-        shoulder_diff = abs(left_shoulder.y - right_shoulder.y)
-        if shoulder_diff > 0.05:
-            return False
+        ls = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        rs = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+        if abs(ls.y - rs.y) > 0.05: return False
     face_results = face_mesh.process(rgb_frame)
-    if not face_results.multi_face_landmarks:
-        return False
+    if not face_results.multi_face_landmarks: return False
     for landmarks in face_results.multi_face_landmarks:
         mouth_gap = abs(landmarks.landmark[13].y - landmarks.landmark[14].y)
         eye_gap = abs(landmarks.landmark[159].y - landmarks.landmark[145].y)
-        if mouth_gap < 0.012 and eye_gap > 0.012:
-            return True
+        if mouth_gap < 0.012 and eye_gap > 0.012: return True
     return False
 
-def download_youtube_video(url):
-    print(f"[YT-DLP] Downloading video...")
-    output_filename = os.path.join(BASE_DIR, "yt_download.mp4")
-    if os.path.exists(output_filename):
-        os.remove(output_filename)
-    ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'outtmpl': output_filename,
-        'quiet': False,
-        'no_warnings': True,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-    return os.path.normpath(os.path.abspath(output_filename))
-
 def run_project():
-    print("\n--- AI SYSTEM STARTUP (GUI SELECTOR) ---")
-    print("1. Local Video (Browse)")
-    print("2. YouTube Video (URL)")
-    mode = input("Select Mode (1 or 2): ")
+    if len(sys.argv) < 3:
+        print("\n[USAGE] FindDecentFace.exe <video_file> <reference_image>")
+        print("Example: FindDecentFace.exe video.mp4 boss.jpg")
+        return
 
-    video_source = ""
-    if mode == '2':
-        url = input("\nEnter YouTube URL: ")
-        video_source = download_youtube_video(url)
-    else:
-        print("\nOpening File Explorer... Please select a Video.")
-        video_source = get_file_path("Select Video", [("Video files", "*.mp4 *.mkv *.avi *.mov")])
+    video_source = sys.argv[1]
+    reference_img = sys.argv[2]
 
-    if not video_source:
-        print("No video selected. Exiting."); return
+    if not os.path.exists(video_source) or not os.path.exists(reference_img):
+        print("[ERROR] File not found. Check if names are correct."); return
 
-    print("Opening File Explorer... Please select a Reference Image.")
-    reference_img = get_file_path("Select Reference Image", [("Image files", "*.jpg *.jpeg *.png *.webp")])
-
-    if not reference_img:
-        print("No image selected. Exiting."); return
+    cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        print("[ERROR] Could not open video."); return
 
     for folder in [OUTPUT_DIR, SCANNED_DIR]:
         if os.path.exists(folder): shutil.rmtree(folder)
         os.makedirs(folder)
     
-    cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
-    if not cap.isOpened():
-        print(f"[ERROR] Could not open video source."); return
-
     saved = 0
     scanned_count = 0
     frame_idx = 0
-    print(f"\n[GPU MINING] Scanning and Auditing Frames...")
+    print(f"\n[CLI START] Video: {video_source} | Fixed Skip: 1s")
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret: break
         if frame_idx % FRAME_SKIP == 0:
             scanned_count += 1
-            cv2.imwrite(os.path.join(SCANNED_DIR, f"scanned_frame_{scanned_count}.jpg"), frame)
+            cv2.imwrite(os.path.join(SCANNED_DIR, f"scanned_{scanned_count}.jpg"), frame)
             try:
                 if is_pixel_perfect(frame):
                     verify = DeepFace.verify(
-                        img1_path = frame, 
-                        img2_path = reference_img, 
-                        model_name = "Facenet", 
-                        detector_backend = "retinaface",
-                        enforce_detection = False,
-                        silent = True
+                        img1_path=frame, 
+                        img2_path=reference_img, 
+                        model_name="Facenet", 
+                        detector_backend="retinaface", 
+                        enforce_detection=False, 
+                        silent=True
                     )
                     if verify['distance'] < 0.25:
                         saved += 1
@@ -167,8 +108,6 @@ def run_project():
     
     cap.release()
     print(f"\n[DONE] Total Scanned: {scanned_count} | Total Perfect: {saved}")
-    os.startfile(BASE_DIR)
-    input("Press Enter to exit...")
 
 if __name__ == "__main__":
     run_project()
