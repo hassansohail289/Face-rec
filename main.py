@@ -20,8 +20,6 @@ else:
 OUTPUT_DIR = os.path.join(BASE_DIR, "ai_perfect_shots")
 SCANNED_DIR = os.path.join(BASE_DIR, "all_scanned_frames")
 
-FRAME_SKIP = 30 
-
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5)
 mp_hands = mp.solutions.hands
@@ -59,21 +57,27 @@ def is_pixel_perfect(frame):
     return False
 
 def run_project():
-    if len(sys.argv) < 3:
-        print("\n[USAGE] FindDecentFace.exe <video_file> <reference_image>")
-        print("Example: FindDecentFace.exe video.mp4 boss.jpg")
+    if len(sys.argv) < 5:
+        print("\n[USAGE] FindDecentFace.exe <video> <image> frameskip <number>")
         return
 
     video_source = sys.argv[1]
     reference_img = sys.argv[2]
+    
+    try:
+        
+        if sys.argv[3].lower() == 'frameskip':
+            user_skip = int(sys.argv[4])
+        else:
+            print("[ERROR] Use 'frameskip' keyword."); return
+    except:
+        print("[ERROR] Frameskip must be a number."); return
 
     if not os.path.exists(video_source) or not os.path.exists(reference_img):
-        print("[ERROR] File not found. Check if names are correct."); return
+        print("[ERROR] File not found."); return
 
     cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
-    if not cap.isOpened():
-        print("[ERROR] Could not open video."); return
-
+    
     for folder in [OUTPUT_DIR, SCANNED_DIR]:
         if os.path.exists(folder): shutil.rmtree(folder)
         os.makedirs(folder)
@@ -81,29 +85,30 @@ def run_project():
     saved = 0
     scanned_count = 0
     frame_idx = 0
-    print(f"\n[CLI START] Video: {video_source} | Fixed Skip: 1s")
+    
+    print(f"\n[CLI START] Video: {video_source} | Frameskip: {user_skip}")
 
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret: break
-        if frame_idx % FRAME_SKIP == 0:
+
+        
+        if frame_idx == 0 or frame_idx % user_skip == 0:
             scanned_count += 1
             cv2.imwrite(os.path.join(SCANNED_DIR, f"scanned_{scanned_count}.jpg"), frame)
             try:
                 if is_pixel_perfect(frame):
                     verify = DeepFace.verify(
-                        img1_path=frame, 
-                        img2_path=reference_img, 
-                        model_name="Facenet", 
-                        detector_backend="retinaface", 
-                        enforce_detection=False, 
-                        silent=True
+                        img1_path=frame, img2_path=reference_img, 
+                        model_name="Facenet", detector_backend="retinaface", 
+                        enforce_detection=False, silent=True
                     )
                     if verify['distance'] < 0.25:
                         saved += 1
                         print(f"[MATCH] Perfect Shot {saved} at frame {frame_idx}")
                         cv2.imwrite(os.path.join(OUTPUT_DIR, f"perfect_shot_{saved}.jpg"), frame)
             except: pass
+            
         frame_idx += 1
     
     cap.release()
